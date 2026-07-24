@@ -2,6 +2,40 @@
   text-align: center;
 }
 
+.news-card-wrapper {
+  position: relative;
+}
+
+.news-card {
+  width: 100%;
+  max-width: 18rem;
+  overflow: visible !important;
+}
+
+.news-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.navbar {
+  background-color: black !important;
+}
+
+.navbar .nav-link,
+.navbar .navbar-brand {
+  color: white !important;
+}
+
+.navbar-toggler-icon {
+  filter: invert(1);
+}
+
 .App-logo {
   height: 40vmin;
   pointer-events: none;
