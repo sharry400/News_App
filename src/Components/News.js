@@ -1,120 +1,145 @@
-import React, { Component } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import NewItems from './NewItems'
-import Spinner from './Spinner';
+import Spinner from './Spinner'
 import PropTypes from 'prop-types'
 
-export default class News extends Component {
-  static defaultProps = {
-    country: 'us',
-    pageSize: 8,
-    category: 'general'
+const News = (props) => {
+  const [articles, setArticles] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [page, setPage] = useState(1)
+  const [totalResults, setTotalResults] = useState(0)
+  const sentinelRef = useRef(null)
+  const observerRef = useRef(null)
+
+  const capFirstLetter = (string) => {
+    return string.charAt(0).toUpperCase() + string.slice(1)
   }
 
-  static propTypes = {
-    country: PropTypes.string,
-    pageSize: PropTypes.number,
-    category: PropTypes.string
-  }
+  const updateNews = useCallback(
+    async (pageNumber = 1) => {
+      const totalPages = Math.max(1, Math.ceil(totalResults / props.pageSize))
 
-  CapFirstLetter = (string) => {
-    return string.charAt(0).toUpperCase() + string.slice(1);
-  }
+      if (pageNumber > totalPages && pageNumber !== 1) {
+        return
+      }
 
-  constructor(props) {
-    super(props);
-    this.state = {
-      articles: [],
-      loading: false,
-      page: 1,
-      totalResults: 0
+      const url = `https://newsapi.org/v2/top-headlines?country=${props.country}&category=${props.category}&apiKey=${props.apikey}&page=${pageNumber}&pageSize=${props.pageSize}`
+      setLoading(true)
+
+      const data = await fetch(url)
+      const parsedData = await data.json()
+      console.log('API Response:', parsedData)
+
+      setArticles((prevArticles) =>
+        pageNumber === 1 ? parsedData.articles : prevArticles.concat(parsedData.articles)
+      )
+      setTotalResults(parsedData.totalResults)
+      setLoading(false)
+      setPage(pageNumber)
+    },
+    [props.category, props.country, props.pageSize, props.apikey, totalResults]
+  )
+
+  const fetchMoreData = useCallback(() => {
+    if (loading) {
+      return
     }
-    this.sentinelRef = React.createRef();
-    document.title = `${this.CapFirstLetter(this.props.category)} - NewsMonkey`
-  }
 
-  async updateNews(page = this.state.page) {
-    const totalPages = Math.ceil(this.state.totalResults / this.props.pageSize) || 1;
-
-    if (page > totalPages && page !== 1) {
-      return;
+    const totalPages = Math.max(1, Math.ceil(totalResults / props.pageSize))
+    if (page >= totalPages) {
+      return
     }
 
-    const url = `https://newsapi.org/v2/top-headlines?country=${this.props.country}&category=${this.props.category}&apiKey=57ac4597395240879203fe891d6298a3&page=${page}&pageSize=${this.props.pageSize}`
-    this.setState({ loading: true })
+    updateNews(page + 1)
+  }, [loading, totalResults, page, props.pageSize, updateNews])
 
-    let data = await fetch(url)
-    let parseddata = await data.json()
-    console.log("API Response:", parseddata)
+  useEffect(() => {
+    updateNews(1)
+  }, [updateNews])
 
-    this.setState((prevState) => ({
-      articles: page === 1 ? parseddata.articles : prevState.articles.concat(parseddata.articles),
-      totalResults: parseddata.totalResults,
-      loading: false,
-      page: page
-    }))
-  }
+  // Debug: expose loaded count in console when articles change
+  useEffect(() => {
+    console.log(`Loaded articles: ${articles.length} / ${totalResults}`)
+  }, [articles.length, totalResults])
 
-  async componentDidMount() {
-    this.updateNews(1);
+  useEffect(() => {
+    const sentinel = sentinelRef.current
+    if (!sentinel) {
+      return
+    }
 
-    if (this.sentinelRef.current) {
-      this.observer = new IntersectionObserver((entries) => {
-        const entry = entries[0];
-        if (entry.isIntersecting && !this.state.loading) {
-          this.fetchMoreData();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0]
+        if (entry.isIntersecting) {
+          console.log('IntersectionObserver: sentinel is visible', { loading })
         }
-      }, {
+        if (entry.isIntersecting && !loading) {
+          console.log('IntersectionObserver: triggering fetchMoreData()')
+          fetchMoreData()
+        }
+      },
+      {
         root: null,
-        threshold: 0.1
-      });
+        threshold: 0.1,
+      }
+    )
 
-      this.observer.observe(this.sentinelRef.current);
+    observer.observe(sentinel)
+    observerRef.current = observer
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect()
+      }
     }
-  }
+  }, [fetchMoreData, loading])
 
-  componentWillUnmount() {
-    if (this.observer) {
-      this.observer.disconnect();
-    }
-  }
-
-  fetchMoreData = async () => {
-    if (this.state.loading) {
-      return;
-    }
-
-    const totalPages = Math.ceil(this.state.totalResults / this.props.pageSize);
-    if (this.state.page >= totalPages) {
-      return;
-    }
-
-    const nextPage = this.state.page + 1;
-    this.updateNews(nextPage);
-  }
-
-  render() {
-    return (
-      <div className="container my-3">
-        <h1 className='my-3 text-center' style={{ margin: '35px 0px' }}>NewsMonkey - Top Headlines on {this.CapFirstLetter(this.props.category)}</h1>
-        <div className='container'>
-          <div className='row'>
-            {this.state.articles?.map((element) => {
-              return <div className="col-md-4" key={element.url}>
+  return (
+    <div className="container my-3">
+      <h1 className="my-3 text-center" style={{ margin: '55px 0px' }}>
+        NewsMonkey - Top Headlines on {capFirstLetter(props.category)}
+      </h1>
+      <div className="text-center mb-2" aria-live="polite">
+        <small className="text-muted">Showing {articles.length} of {totalResults} results</small>
+      </div>
+      <div className="container">
+        <div className="row">
+          {articles?.map((element) => {
+            return (
+              <div className="col-sm-12 col-md-6 col-lg-4 mb-3" key={element.url}>
                 <NewItems
                   imageurl={element.urlToImage}
-                  title={element.title ? element.title.slice(0, 45) : ""}
-                  description={element.description ? element.description.slice(0, 88) : ""}
-                  newsurl={element.url} author={element.author} date={element.publishedAt}
+                  title={element.title ? element.title.slice(0, 45) : ''}
+                  description={element.description ? element.description.slice(0, 88) : ''}
+                  newsurl={element.url}
+                  author={element.author}
+                  date={element.publishedAt}
                   source={element.source.name}
                 />
               </div>
-            })}
-          </div>
-
-          {this.state.loading ? <Spinner /> : null}
-          <div ref={this.sentinelRef} style={{ height: '1px' }}></div>
+            )
+          })}
         </div>
+
+        {loading ? <Spinner /> : null}
+        <div ref={sentinelRef} style={{ height: '1px' }}></div>
       </div>
-    )
-  }
+    </div>
+  )
 }
+
+News.defaultProps = {
+  country: 'us',
+  pageSize: 8,
+  category: 'general',
+}
+
+News.propTypes = {
+  country: PropTypes.string,
+  pageSize: PropTypes.number,
+  category: PropTypes.string,
+  apikey: PropTypes.string,
+}
+
+export default News
